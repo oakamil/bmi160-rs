@@ -139,4 +139,36 @@ where
         self.gyro_range = range;
         Ok(())
     }
+
+    /// Configure FIFO to collect Gyroscope data, Sensortime, and use Header mode
+    pub fn config_fifo(&mut self) -> Result<(), Error<CommE>> {
+        // FIFO_CONFIG_1 (0x47): Gyro (0x80) | Header (0x10) | Time (0x02) = 0x92
+        self.iface.write_register(0x47, 0x92)?;
+        // Flush FIFO (CMD = 0xB0)
+        self.iface.write_register(Register::CMD as u8, 0xB0)?;
+        Ok(())
+    }
+
+    /// Read raw bytes from the FIFO into the provided buffer
+    pub fn read_fifo(&mut self, buffer: &mut [u8]) -> Result<usize, Error<CommE>> {
+        // Read 11-bit FIFO length
+        let len_lsb = self.iface.read_register(0x22)?;
+        let len_msb = self.iface.read_register(0x23)?;
+        let length = (((len_msb & 0x07) as u16) << 8) | (len_lsb as u16);
+
+        let length = length as usize;
+        if length == 0 {
+            return Ok(0);
+        }
+
+        // The Sensortime frame (header 0x44 + 3 bytes time) is additionally appended at the end of the FIFO
+        // but it is NOT included in the FIFO length register. We must read length + 4 bytes to get it.
+        let to_read = core::cmp::min(length + 4, buffer.len() - 1); // leave 1 byte for register address
+
+        // Burst read from 0x24 (FIFO_DATA)
+        buffer[0] = 0x24; // Register address
+        self.iface.read_data(&mut buffer[0..=to_read])?;
+
+        Ok(to_read)
+    }
 }
