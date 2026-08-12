@@ -1,8 +1,8 @@
 use crate::{
-    interface::{I2cInterface, ReadData, SpiInterface, WriteData},
-    types::{AccelerometerRange, GyroscopeRange},
     AccelerometerPowerMode, BitFlags, Bmi160, Error, GyroscopePowerMode, MagnetometerPowerMode,
     Register, SensorPowerMode, SlaveAddr, Status,
+    interface::{I2cInterface, ReadData, SpiInterface, WriteData},
+    types::{AccelerometerRange, GyroscopeRange},
 };
 
 impl<I2C> Bmi160<I2cInterface<I2C>> {
@@ -140,12 +140,18 @@ where
         Ok(())
     }
 
-    /// Configure FIFO to collect Gyroscope data, Sensortime, and use Header mode
+    /// Configure FIFO to collect Gyroscope and Accelerometer data, Sensortime, and use Header mode.
+    ///
+    /// Note: By enabling both Gyro and Accel in the FIFO configuration (`0xD2`), the BMI160 will
+    /// dynamically construct frames based on which sensors are actually powered on.
+    /// - If only Gyro is powered on: outputs `0x84` frames (Gyro only)
+    /// - If only Accel is powered on: outputs `0x88` frames (Accel only)
+    /// - If both are powered on: outputs `0x8C` frames (Combined Gyro + Accel)
     pub fn config_fifo(&mut self) -> Result<(), Error<CommE>> {
-        // FIFO_CONFIG_1 (0x47): Gyro (0x80) | Header (0x10) | Time (0x02) = 0x92
-        self.iface.write_register(0x47, 0x92)?;
+        // FIFO_CONFIG_1 (0x47): Gyro (0x80) | Accel (0x40) | Header (0x10) | Time (0x02) = 0xD2
+        self.iface.write_register(0x47, 0xD2)?;
         // Flush FIFO (CMD = 0xB0)
-        self.iface.write_register(Register::CMD as u8, 0xB0)?;
+        self.iface.write_register(Register::CMD, 0xB0)?;
         Ok(())
     }
 
